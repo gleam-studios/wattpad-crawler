@@ -25,7 +25,13 @@
 
 ## 界面预览
 
-![Wattpad 中文工具箱界面](docs/assets/ui-screenshot.png)
+### 关键词搜索
+
+![Wattpad 中文工具箱关键词搜索界面](docs/assets/search-preview.png)
+
+### 授权导出
+
+![Wattpad 中文工具箱授权导出界面](docs/assets/export-preview.png)
 
 ## 功能概览
 
