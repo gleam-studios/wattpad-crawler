@@ -52,7 +52,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/Wattpad 中文工具箱-mac.zip
+          path: dist/WattpadTool-mac.zip
           if-no-files-found: error
 
       - name: Upload Windows artifact

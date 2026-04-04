@@ -1,5 +1,9 @@
 # Wattpad 中文工具箱
 
+[![Build and Release](https://github.com/gleam-studios/wattpad-/actions/workflows/build-release.yml/badge.svg)](https://github.com/gleam-studios/wattpad-/actions/workflows/build-release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/gleam-studios/wattpad-)](https://github.com/gleam-studios/wattpad-/releases/latest)
+[![License](https://img.shields.io/badge/license-Private-lightgrey)](https://github.com/gleam-studios/wattpad-)
+
 面向中文用户的 Wattpad 桌面工具，提供两类能力：
 
 - 按关键词搜索 Wattpad 公开作品元数据，并按热度排序
@@ -11,6 +15,17 @@
 - CLI 命令行工具
 - macOS / Windows 打包脚本
 - GitHub Actions 自动构建流程
+
+## 下载
+
+- 最新版本：<https://github.com/gleam-studios/wattpad-/releases/latest>
+- 当前推荐下载：
+  - macOS：`WattpadTool-mac.zip`
+  - Windows：`WattpadTool-windows.zip`
+
+## 界面预览
+
+![Wattpad 中文工具箱界面](docs/assets/ui-screenshot.png)
 
 ## 功能概览
 
@@ -147,7 +162,7 @@ GUI 导出则会自动打包，并默认只保留最终英文/中文 Word 文档
 默认产物：
 
 - `dist/Wattpad 中文工具箱.app`
-- `dist/Wattpad 中文工具箱-mac.zip`
+- `dist/WattpadTool-mac.zip`
 
 ### Windows
 

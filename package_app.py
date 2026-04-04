@@ -113,7 +113,7 @@ end run
 def package_macos_app(app_path: Path) -> Path | None:
     if sys.platform != "darwin" or not app_path.exists():
         return None
-    zip_path = app_path.parent / f"{app_path.stem}-mac.zip"
+    zip_path = app_path.parent / f"{APP_NAME}-mac.zip"
     if zip_path.exists():
         zip_path.unlink()
     subprocess.run(
