@@ -4,13 +4,14 @@ import argparse
 import html as html_lib
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
 import requests
 from bs4 import BeautifulSoup
+
+from docx_renderer import convert_html_file_to_docx
 
 
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
@@ -260,26 +261,6 @@ def render_story_html(story: Dict, chapters: List[Dict]) -> str:
 </body>
 </html>
 """
-
-
-def convert_html_to_docx(html_path: Path, docx_path: Path, title: str, author: str) -> None:
-    subprocess.run(
-        [
-            "textutil",
-            "-convert",
-            "docx",
-            str(html_path),
-            "-output",
-            str(docx_path),
-            "-title",
-            title,
-            "-author",
-            author,
-        ],
-        check=True,
-    )
-
-
 def export_story_assets(
     story_url: str,
     output_dir: str | Path = "wattpad_exports",
@@ -322,7 +303,12 @@ def export_story_assets(
 
         story_html = render_story_html(story, chapters)
         html_path.write_text(story_html, encoding="utf-8")
-        convert_html_to_docx(html_path, docx_path, story["title"], story["user"]["username"])
+        convert_html_file_to_docx(
+            html_path,
+            docx_path,
+            title=story["title"],
+            author=story["user"]["username"],
+        )
 
         return {
             "story": story,

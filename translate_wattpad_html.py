@@ -3,7 +3,6 @@
 import argparse
 import json
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -11,6 +10,8 @@ from typing import Iterable, List
 
 import requests
 from bs4 import BeautifulSoup
+
+from docx_renderer import convert_html_file_to_docx
 
 
 TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
@@ -223,20 +224,11 @@ def translate_html_document(
         soup.title.string = f"{translated_title} 中文版"
 
     resolved_output_html.write_text(str(soup), encoding="utf-8")
-    subprocess.run(
-        [
-            "textutil",
-            "-convert",
-            "docx",
-            str(resolved_output_html),
-            "-output",
-            str(resolved_output_docx),
-            "-title",
-            f"{translated_title} 中文版",
-            "-author",
-            author,
-        ],
-        check=True,
+    convert_html_file_to_docx(
+        resolved_output_html,
+        resolved_output_docx,
+        title=f"{translated_title} 中文版",
+        author=author,
     )
 
     return {

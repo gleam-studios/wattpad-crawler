@@ -1,0 +1,93 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            artifact_name: wattpad-macos
+          - os: windows-latest
+            label: Windows
+            artifact_name: wattpad-windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements-build.txt
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: python package_app.py --zip
+
+      - name: Build Windows app
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          python package_app.py
+          Compress-Archive -Path dist/WattpadTool.exe -DestinationPath dist/WattpadTool-windows.zip -Force
+
+      - name: Upload macOS artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/Wattpad 中文工具箱-mac.zip
+          if-no-files-found: error
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/WattpadTool-windows.zip
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wattpad-macos
+          path: release-assets/macos
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: wattpad-windows
+          path: release-assets/windows
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/macos/*
+            release-assets/windows/*

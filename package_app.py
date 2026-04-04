@@ -41,6 +41,8 @@ def build(debug_console: bool = False) -> Path:
         "requests",
         "--collect-submodules",
         "bs4",
+        "--collect-submodules",
+        "docx",
         "--hidden-import",
         "tkinter",
     ]
