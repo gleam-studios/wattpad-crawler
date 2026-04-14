@@ -6,8 +6,8 @@
 
 面向中文用户的 Wattpad 桌面工具，提供两类能力：
 
-- 按关键词搜索 Wattpad 公开作品元数据，并按热度排序
-- 对你明确提供且已获授权的免费作品，导出英文版和中文版 Word 文档
+- 按关键词搜索 Wattpad 公开作品元数据，并按热度排序；GUI 中可多选结果后一键批量导出
+- 通过作品 URL 或批量流程导出英文 / 可选简体中文 Word 文档（使用者须自行确保有权存档与翻译）
 
 项目同时提供：
 
@@ -42,14 +42,11 @@
 - 默认只在界面展示，不会额外生成 `json/csv`
 - 如有需要，可手动勾选导出搜索结果
 
-### 2. 授权导出
+### 2. 搜索批量导出
 
-- 仅接受你主动提供的作品 URL
-- 仅允许导出你拥有版权或已获得明确授权的免费作品
-- 自动生成英文版 `.docx`
-- 可选自动生成中文版 `.docx`
-- GUI 导出时会先询问 ZIP 保存位置，默认打开系统下载文件夹
-- 最终 ZIP 默认只保留两份 Word 文档，避免输出杂乱
+- **搜索页**：结果列表支持多选，「导出选中作品」→ 确认数量、名称、是否生成中文与 Cookie（作者本人付费书）→ 选择 ZIP 保存位置；ZIP 内按作品分子文件夹存放各书的 Word 文档
+- 默认生成英文版 `.docx`；**「中文」复选框默认不勾选**，需要简体中文版时请手动勾选（会调用翻译接口）
+- 单 URL 导出仍可通过下方 CLI 完成
 
 ### 3. 跨平台打包
 
@@ -60,8 +57,8 @@
 ## 合规边界
 
 - 搜索只抓取公开元数据
-- 不支持从关键词搜索结果中直接整本抓取任意作品
-- 导出只适用于你拥有版权或已获得明确授权的作品
+- 导出能力由使用者自行确保合法合规；工具不在界面中逐项核验版权
+- 批量与单本导出均可能产生整本内容副本，请谨慎使用
 - 对**他人**的付费作品不会提供导出能力
 - **作者本人**的 Wattpad 付费作品：在浏览器登录作者账号并导出 Cookie 文件后，可使用 `--cookies`（CLI）或 GUI 中的「Cookie 文件」选项导出；工具会校验登录用户名与作品作者用户名一致
 
@@ -95,7 +92,7 @@ python3 wattpad_app.py
 
 mac 本地打包后，直接双击：
 
-- `Wattpad 中文工具箱.app`
+- `dist/Wattpad.app`（启动器，内嵌 `WattpadTool.app`）
 
 ### CLI 搜索
 
@@ -116,7 +113,6 @@ python3 wattpad_tool.py search "hockey" \
 
 ```bash
 python3 wattpad_tool.py export "https://www.wattpad.com/story/242618522-ice-cold" \
-  --authorized \
   --output-dir ./wattpad_tool_output/export_test \
   --basename ice-cold
 ```
@@ -125,28 +121,31 @@ python3 wattpad_tool.py export "https://www.wattpad.com/story/242618522-ice-cold
 
 ```bash
 python3 wattpad_tool.py export "https://www.wattpad.com/story/你的作品链接" \
-  --authorized \
   --cookies ./wattpad_cookies.txt \
   --output-dir ./wattpad_tool_output/my_paid_story
 ```
 
-只导出英文版：
+同时生成简体中文版（需可访问翻译接口）：
 
 ```bash
 python3 wattpad_tool.py export "https://www.wattpad.com/story/242618522-ice-cold" \
-  --authorized \
-  --skip-translation
+  --translate-zh
 ```
 
-CLI 默认会在输出目录生成：
+CLI **默认仅英文**；加上 `--translate-zh` 后才会额外生成中文 HTML/DOCX。旧版脚本里的 `--skip-translation` 已无实际作用（默认已是仅英文）。
+
+默认会在输出目录生成：
 
 - `*-en.html`
 - `*-en.docx`
-- `*-zh-cn.html`
-- `*-zh-cn.docx`
 - `*-metadata.json`
 
-GUI 导出则会自动打包，并默认只保留最终英文/中文 Word 文档。
+启用 `--translate-zh` 时还会生成：
+
+- `*-zh-cn.html`
+- `*-zh-cn.docx`
+
+搜索批量导出的 ZIP 内按作品分子目录存放各书文档；是否含中文版与 GUI 中「中文」勾选一致。
 
 ## 项目结构
 
@@ -178,8 +177,9 @@ GUI 导出则会自动打包，并默认只保留最终英文/中文 Word 文档
 
 默认产物：
 
-- `dist/Wattpad 中文工具箱.app`
-- `dist/WattpadTool-mac.zip`
+- `dist/WattpadTool.app`（PyInstaller 主程序包）
+- `dist/Wattpad.app`（本地启动器，便于双击运行）
+- `dist/WattpadTool-mac.zip`（分发用 zip，内含启动器）
 
 ### Windows
 
@@ -218,6 +218,7 @@ build_windows.bat
 - 已支持跨平台 Word 导出
 - 已支持 mac 本机双击启动包装应用
 - 已默认收敛搜索与导出产物，避免目录杂乱
+- GUI 与 CLI 导出默认仅英文；中文翻译为可选（GUI 勾选「中文」或 CLI 使用 `--translate-zh`）
 
 ## 许可证与责任
 

@@ -290,7 +290,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Wattpad helper CLI. Search can rank public metadata by popularity. "
-            "Export requires a direct story URL plus an explicit authorization confirmation."
+            "Export accepts a direct story URL; you are responsible for rights to the content you archive."
         )
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -314,22 +314,26 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser(
         "export",
         help=(
-            "Export a single authorized free story URL to English DOCX and, by default, a Chinese DOCX. "
-            "This command does not accept a keyword and does not export directly from search results."
+            "Export a Wattpad story URL to English DOCX; use --translate-zh to also generate Simplified Chinese."
         ),
     )
     export_parser.add_argument("story_url", help="Direct Wattpad story URL.")
     export_parser.add_argument(
         "--authorized",
         action="store_true",
-        help="Required acknowledgment that you own this story or have explicit permission to archive and translate it.",
+        help="Optional no-op kept for older scripts; export no longer requires this flag.",
     )
     export_parser.add_argument("--output-dir", type=Path, default=Path("wattpad_tool_output"))
     export_parser.add_argument("--basename", help="Optional custom file stem for exported files.")
     export_parser.add_argument(
+        "--translate-zh",
+        action="store_true",
+        help="Also generate Simplified Chinese HTML/DOCX (uses translation).",
+    )
+    export_parser.add_argument(
         "--skip-translation",
         action="store_true",
-        help="Only generate the English HTML/DOCX pair.",
+        help="Deprecated no-op: English-only is the default; use --translate-zh when you want Chinese.",
     )
     export_parser.add_argument(
         "--cookies",
@@ -369,11 +373,6 @@ def run_search(args: argparse.Namespace) -> int:
 
 
 def run_export(args: argparse.Namespace) -> int:
-    if not args.authorized:
-        raise SystemExit(
-            "Refusing export without explicit authorization. Re-run with --authorized only for stories you own or have permission to archive."
-        )
-
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -384,7 +383,7 @@ def run_export(args: argparse.Namespace) -> int:
             story_url=args.story_url,
             output_dir=output_dir,
             basename=args.basename,
-            translate_to_chinese=not args.skip_translation,
+            translate_to_chinese=bool(getattr(args, "translate_zh", False)),
             cookies_path=args.cookies.expanduser().resolve() if args.cookies else None,
         )
     finally:

@@ -81,12 +81,12 @@ def format_number(value: int | None) -> str:
     return f"{int(value or 0):,}"
 
 
-def status_text(story: dict) -> str:
-    return "已完结" if story.get("completed") else "连载中"
-
-
 def type_text(story: dict) -> str:
     return "付费" if story.get("isPaywalled") else "免费"
+
+
+def status_text(story: dict) -> str:
+    return "已完结" if story.get("completed") else "连载中"
 
 
 def maturity_text(story: dict) -> str:
@@ -97,25 +97,6 @@ def shorten(text: str, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 1] + "…"
-
-
-def format_search_results(payload: dict) -> str:
-    stories = payload.get("stories", [])
-    lines = [
-        f"关键词：{payload.get('keyword', '')}",
-        f"匹配总数：{format_number(payload.get('total', 0))}",
-        f"当前返回：{format_number(payload.get('returned', len(stories)))}",
-        "排序方式：阅读量 > 投票数 > 评论数 > 章节数",
-        "",
-    ]
-    for idx, story in enumerate(stories, start=1):
-        lines.append(
-            f"{idx}. {story['title']} | 作者：{story['author']} | 阅读：{format_number(story['readCount'])} | "
-            f"投票：{format_number(story['voteCount'])} | 评论：{format_number(story['commentCount'])} | "
-            f"章节：{format_number(story['numParts'])} | 类型：{type_text(story)}"
-        )
-        lines.append(f"   {story['url']}")
-    return "\n".join(lines)
 
 
 def open_target(target: str | Path) -> None:
@@ -152,16 +133,6 @@ def reveal_target(target: str | Path) -> None:
         os.startfile(str(path))  # type: ignore[attr-defined]
         return
     open_target(path.parent if path.is_file() else path)
-
-
-def bundle_export_files(paths: list[Path], archive_path: Path) -> None:
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    if archive_path.exists():
-        archive_path.unlink()
-
-    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for file_path in paths:
-            archive.write(file_path, file_path.name)
 
 
 def localize_log_line(line: str) -> str:
@@ -234,21 +205,17 @@ class QueueWriter(io.TextIOBase):
 class WattpadApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Wattpad 中文工具箱")
-        self.root.geometry("1240x840")
-        self.root.minsize(1080, 740)
+        self.root.title("Wattpad")
+        self.root.geometry("1000x700")
+        self.root.minsize(720, 480)
         self.root.configure(bg=BG)
 
         self.events: queue.Queue = queue.Queue()
         self.worker_running = False
         self.last_output_target: Path | None = None
         self.current_search_payload: dict | None = None
-        self.current_selected_story: dict | None = None
 
-        self.status_var = tk.StringVar(value="就绪")
-        self.search_total_var = tk.StringVar(value="0")
-        self.search_returned_var = tk.StringVar(value="0")
-        self.search_sort_var = tk.StringVar(value="阅读量 > 投票数 > 评论数")
+        self.status_var = tk.StringVar(value="")
 
         self.search_keyword = tk.StringVar()
         self.search_max_results = tk.IntVar(value=20)
@@ -259,10 +226,7 @@ class WattpadApp:
         self.search_save_csv = tk.BooleanVar(value=False)
         self.search_output_dir = tk.StringVar(value=str(default_output_root() / "search"))
 
-        self.export_story_url = tk.StringVar()
-        self.export_authorized = tk.BooleanVar(value=False)
-        self.export_translate = tk.BooleanVar(value=True)
-        self.export_basename = tk.StringVar()
+        self.export_translate = tk.BooleanVar(value=False)
         self.export_cookies_path = tk.StringVar()
 
         self._build_ui()
@@ -287,16 +251,9 @@ class WattpadApp:
         main_pane.add(top, weight=5)
         main_pane.add(bottom, weight=2)
 
-        self.notebook = ttk.Notebook(top, style="App.TNotebook")
-        self.notebook.pack(fill="both", expand=True)
-
-        self.search_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=16)
-        self.export_tab = ttk.Frame(self.notebook, style="App.TFrame", padding=16)
-        self.notebook.add(self.search_tab, text="关键词搜索")
-        self.notebook.add(self.export_tab, text="授权导出")
-
-        self._build_search_tab(self.search_tab)
-        self._build_export_tab(self.export_tab)
+        work = ttk.Frame(top, style="App.TFrame", padding=12)
+        work.pack(fill="both", expand=True)
+        self._build_main_panel(work)
         self._build_log_area(bottom)
 
     def _build_styles(self) -> None:
@@ -333,52 +290,27 @@ class WattpadApp:
         style.configure("App.TPanedwindow", background=BG)
 
     def _build_header(self, parent: tk.Frame) -> None:
-        header = tk.Frame(parent, bg=INK, highlightthickness=0, padx=26, pady=22)
+        header = tk.Frame(parent, bg=INK, highlightthickness=0, padx=16, pady=12)
         header.pack(fill="x")
-
-        left = tk.Frame(header, bg=INK)
-        left.pack(side="left", fill="x", expand=True)
-
-        ttk.Label(left, text="Wattpad 中文工具箱", style="HeroTitle.TLabel").pack(anchor="w")
-        ttk.Label(
-            left,
-            text="搜索公开作品元数据，按热度排序；对你自己的作品或已获授权作品，导出英文版和中文版文档。作者本人的付费作品在提供浏览器 Cookie 后也可导出。",
-            style="HeroSub.TLabel",
-        ).pack(anchor="w", pady=(6, 0))
-
-        badges = tk.Frame(header, bg=INK)
-        badges.pack(side="right", anchor="ne")
-        for label, color in [("全中文界面", ACCENT), ("搜索排序", SUCCESS), ("双语导出", WARNING)]:
-            pill = tk.Label(
-                badges,
-                text=label,
-                bg=color,
-                fg="#ffffff",
-                padx=12,
-                pady=6,
-                font=(ui_font_family(), 10, "bold"),
-            )
-            pill.pack(side="left", padx=(8, 0))
+        ttk.Label(header, text="Wattpad", style="HeroTitle.TLabel").pack(anchor="w")
 
     def _build_log_area(self, parent: tk.Frame) -> None:
         status_row = tk.Frame(parent, bg=BG)
-        status_row.pack(fill="x", pady=(0, 8))
+        status_row.pack(fill="x", pady=(0, 6))
 
-        status_card = tk.Frame(status_row, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=12, pady=10)
+        status_card = tk.Frame(status_row, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=10, pady=6)
         status_card.pack(side="left", fill="x", expand=True)
-        tk.Label(status_card, text="运行状态", bg=SURFACE, fg=MUTED, font=(ui_font_family(), 10)).pack(side="left")
-        tk.Label(status_card, textvariable=self.status_var, bg=SURFACE, fg=TEXT, font=(ui_font_family(), 11, "bold")).pack(side="left", padx=(10, 0))
+        tk.Label(status_card, textvariable=self.status_var, bg=SURFACE, fg=TEXT, font=(ui_font_family(), 11)).pack(side="left", anchor="w")
 
-        ttk.Button(status_row, text="清空日志", style="Soft.TButton", command=self._clear_log).pack(side="right")
-        ttk.Button(status_row, text="打开输出位置", style="Accent.TButton", command=self._open_last_output).pack(side="right", padx=(0, 10))
+        ttk.Button(status_row, text="清空", style="Soft.TButton", command=self._clear_log).pack(side="right")
+        ttk.Button(status_row, text="输出", style="Soft.TButton", command=self._open_last_output).pack(side="right", padx=(0, 8))
 
         log_card = tk.Frame(parent, bg=LOG_BG, highlightbackground="#203142", highlightthickness=1)
         log_card.pack(fill="both", expand=True)
 
-        log_header = tk.Frame(log_card, bg=LOG_BG, padx=14, pady=12)
+        log_header = tk.Frame(log_card, bg=LOG_BG, padx=10, pady=6)
         log_header.pack(fill="x")
-        tk.Label(log_header, text="运行日志", bg=LOG_BG, fg="#ffffff", font=(ui_font_family(), 12, "bold")).pack(side="left")
-        tk.Label(log_header, text="抓取、翻译与导出进度会实时显示在这里", bg=LOG_BG, fg="#aac0d4", font=(ui_font_family(), 10)).pack(side="left", padx=(10, 0))
+        tk.Label(log_header, text="日志", bg=LOG_BG, fg="#ffffff", font=(ui_font_family(), 11, "bold")).pack(side="left")
 
         log_body = tk.Frame(log_card, bg=LOG_BG)
         log_body.pack(fill="both", expand=True, padx=12, pady=(0, 12))
@@ -386,7 +318,7 @@ class WattpadApp:
         self.log_text = tk.Text(
             log_body,
             wrap="word",
-            height=14,
+            height=8,
             bg=LOG_BG,
             fg=LOG_FG,
             relief="flat",
@@ -408,94 +340,61 @@ class WattpadApp:
         scroll.pack(side="right", fill="y")
         self.log_text.configure(yscrollcommand=scroll.set)
 
-    def _build_search_tab(self, parent: ttk.Frame) -> None:
-        intro = tk.Frame(parent, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=16, pady=14)
-        intro.pack(fill="x")
-        tk.Label(intro, text="公开元数据搜索", bg=SURFACE, fg=TEXT, font=(ui_font_family(), 15, "bold")).pack(anchor="w")
-        tk.Label(
-            intro,
-            text="根据关键词检索 Wattpad 公开作品信息，并按阅读量、投票数和评论数综合排序。搜索结果只包含元数据，不会自动整本导出；默认也不会额外保存 json/csv 文件。",
-            bg=SURFACE,
-            fg=MUTED,
-            justify="left",
-            wraplength=980,
-            font=(ui_font_family(), 10),
-        ).pack(anchor="w", pady=(6, 0))
+    def _build_main_panel(self, parent: ttk.Frame) -> None:
+        ctl = tk.Frame(parent, bg=BG)
+        ctl.pack(fill="x", pady=(0, 8))
 
-        controls = ttk.LabelFrame(parent, text="检索条件", style="Surface.TLabelframe", padding=14)
-        controls.pack(fill="x", pady=(12, 0))
+        ttk.Label(ctl, text="关键词", style="Body.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        ttk.Entry(ctl, textvariable=self.search_keyword).grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        self.search_button = ttk.Button(ctl, text="搜索", style="Accent.TButton", command=self._start_search)
+        self.search_button.grid(row=0, column=2, sticky="e")
 
-        ttk.Label(controls, text="关键词", style="Body.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Entry(controls, textvariable=self.search_keyword, width=42).grid(row=0, column=1, sticky="ew", padx=(8, 16))
-        ttk.Label(controls, text="最多返回", style="Body.TLabel").grid(row=0, column=2, sticky="w")
-        ttk.Spinbox(controls, from_=1, to=200, textvariable=self.search_max_results, width=8).grid(row=0, column=3, sticky="w", padx=(8, 0))
+        ttk.Label(ctl, text="最多", style="Body.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Spinbox(ctl, from_=1, to=200, textvariable=self.search_max_results, width=6).grid(row=1, column=1, sticky="w", pady=(8, 0))
+        ttk.Label(ctl, text="每页", style="Body.TLabel").grid(row=1, column=2, sticky="w", padx=(12, 0), pady=(8, 0))
+        ttk.Spinbox(ctl, from_=5, to=100, textvariable=self.search_page_size, width=6).grid(row=1, column=3, sticky="w", pady=(8, 0))
+        ttk.Checkbutton(ctl, text="成熟", variable=self.search_include_mature).grid(row=1, column=4, sticky="w", padx=(12, 0), pady=(8, 0))
+        ttk.Checkbutton(ctl, text="付费", variable=self.search_include_paywalled).grid(row=1, column=5, sticky="w", pady=(8, 0))
 
-        ttk.Label(controls, text="每页抓取量", style="Body.TLabel").grid(row=1, column=0, sticky="w", pady=(10, 0))
-        ttk.Spinbox(controls, from_=5, to=100, textvariable=self.search_page_size, width=8).grid(row=1, column=1, sticky="w", padx=(8, 0), pady=(10, 0))
-        ttk.Checkbutton(controls, text="包含成熟内容", variable=self.search_include_mature).grid(row=1, column=2, sticky="w", pady=(10, 0))
-        ttk.Checkbutton(controls, text="包含付费作品", variable=self.search_include_paywalled).grid(row=1, column=3, sticky="w", padx=(8, 0), pady=(10, 0))
+        ttk.Checkbutton(ctl, text="JSON", variable=self.search_save_json).grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Checkbutton(ctl, text="CSV", variable=self.search_save_csv).grid(row=2, column=1, sticky="w", pady=(6, 0))
 
-        ttk.Label(controls, text="结果保存目录", style="Body.TLabel").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        ttk.Entry(controls, textvariable=self.search_output_dir).grid(row=2, column=1, columnspan=2, sticky="ew", padx=(8, 8), pady=(10, 0))
-        ttk.Button(controls, text="选择目录", style="Soft.TButton", command=lambda: self._choose_directory(self.search_output_dir)).grid(row=2, column=3, sticky="w", pady=(10, 0))
+        ttk.Label(ctl, text="目录", style="Body.TLabel").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Entry(ctl, textvariable=self.search_output_dir).grid(row=3, column=1, columnspan=5, sticky="ew", padx=(0, 6), pady=(8, 0))
+        ttk.Button(ctl, text="…", style="Soft.TButton", width=3, command=lambda: self._choose_directory(self.search_output_dir)).grid(
+            row=3, column=6, sticky="e", pady=(8, 0)
+        )
 
-        ttk.Checkbutton(controls, text="保存 JSON（可选）", variable=self.search_save_json).grid(row=3, column=0, sticky="w", pady=(12, 0))
-        ttk.Checkbutton(controls, text="保存 CSV（可选）", variable=self.search_save_csv).grid(row=3, column=1, sticky="w", pady=(12, 0))
-        self.search_button = ttk.Button(controls, text="开始搜索", style="Accent.TButton", command=self._start_search)
-        self.search_button.grid(row=3, column=3, sticky="e", pady=(12, 0))
+        ctl.columnconfigure(1, weight=1)
 
-        controls.columnconfigure(1, weight=1)
-        controls.columnconfigure(2, weight=1)
+        split = ttk.Panedwindow(parent, orient="horizontal", style="App.TPanedwindow")
+        split.pack(fill="both", expand=True)
 
-        stats_row = tk.Frame(parent, bg=BG)
-        stats_row.pack(fill="x", pady=(12, 0))
-        self._create_stat_card(stats_row, "匹配总数", self.search_total_var).pack(side="left", fill="x", expand=True)
-        self._create_stat_card(stats_row, "当前返回", self.search_returned_var).pack(side="left", fill="x", expand=True, padx=12)
-        self._create_stat_card(stats_row, "排序规则", self.search_sort_var).pack(side="left", fill="x", expand=True)
-
-        content = ttk.Panedwindow(parent, orient="horizontal", style="App.TPanedwindow")
-        content.pack(fill="both", expand=True, pady=(12, 0))
-
-        left = tk.Frame(content, bg=BG)
-        right = tk.Frame(content, bg=BG)
-        content.add(left, weight=3)
-        content.add(right, weight=2)
-
-        self._build_search_results_panel(left)
-        self._build_search_detail_panel(right)
-
-    def _build_search_results_panel(self, parent: tk.Frame) -> None:
-        card = tk.Frame(parent, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
+        left_wrap = tk.Frame(split, bg=BG)
+        card = tk.Frame(left_wrap, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1)
         card.pack(fill="both", expand=True)
 
-        header = tk.Frame(card, bg=SURFACE, padx=16, pady=14)
-        header.pack(fill="x")
-        tk.Label(header, text="搜索结果", bg=SURFACE, fg=TEXT, font=(ui_font_family(), 14, "bold")).pack(side="left")
-        tk.Label(header, text="选中一条结果后，可直接查看详情或把链接带入导出页。", bg=SURFACE, fg=MUTED, font=(ui_font_family(), 10)).pack(side="left", padx=(12, 0))
-
         body = tk.Frame(card, bg=SURFACE)
-        body.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+        body.pack(fill="both", expand=True, padx=8, pady=(8, 4))
 
         columns = ("rank", "title", "author", "reads", "votes", "parts", "type")
-        self.results_tree = ttk.Treeview(body, columns=columns, show="headings", style="App.Treeview")
+        self.results_tree = ttk.Treeview(
+            body,
+            columns=columns,
+            show="headings",
+            style="App.Treeview",
+            selectmode="extended",
+        )
         headings = {
-            "rank": "序号",
-            "title": "作品标题",
+            "rank": "#",
+            "title": "标题",
             "author": "作者",
-            "reads": "阅读量",
-            "votes": "投票",
-            "parts": "章节",
-            "type": "类型",
+            "reads": "阅读",
+            "votes": "票",
+            "parts": "章",
+            "type": "类",
         }
-        widths = {
-            "rank": 64,
-            "title": 340,
-            "author": 140,
-            "reads": 120,
-            "votes": 100,
-            "parts": 80,
-            "type": 80,
-        }
+        widths = {"rank": 44, "title": 280, "author": 120, "reads": 88, "votes": 72, "parts": 56, "type": 56}
         anchors = {
             "rank": "center",
             "title": "w",
@@ -505,157 +404,103 @@ class WattpadApp:
             "parts": "center",
             "type": "center",
         }
-
         for col in columns:
             self.results_tree.heading(col, text=headings[col])
             self.results_tree.column(col, width=widths[col], anchor=anchors[col], stretch=col == "title")
 
         self.results_tree.bind("<<TreeviewSelect>>", self._on_result_select)
         self.results_tree.pack(side="left", fill="both", expand=True)
-
         scroll = ttk.Scrollbar(body, orient="vertical", style="App.Vertical.TScrollbar", command=self.results_tree.yview)
         scroll.pack(side="right", fill="y")
         self.results_tree.configure(yscrollcommand=scroll.set)
 
         actions = tk.Frame(card, bg=SURFACE)
-        actions.pack(fill="x", padx=14, pady=(0, 14))
-        ttk.Button(actions, text="打开作品页", style="Soft.TButton", command=self._open_selected_story).pack(side="left")
-        ttk.Button(actions, text="复制链接", style="Soft.TButton", command=self._copy_selected_story_url).pack(side="left", padx=(8, 0))
-        ttk.Button(actions, text="带入导出页", style="Accent.TButton", command=self._use_selected_story_url).pack(side="right")
+        actions.pack(fill="x", padx=8, pady=(0, 8))
+        self.export_selected_button = ttk.Button(
+            actions,
+            text="导出",
+            style="Accent.TButton",
+            command=self._start_batch_export_from_search,
+        )
+        self.export_selected_button.pack(side="left", fill="x", expand=True)
+        ttk.Button(actions, text="复制", style="Soft.TButton", command=self._copy_selected_story_url).pack(side="right", padx=(8, 0))
+        ttk.Button(actions, text="全选", style="Soft.TButton", command=self._select_all_search_results).pack(side="right")
 
-    def _build_search_detail_panel(self, parent: tk.Frame) -> None:
-        card = tk.Frame(parent, bg=SURFACE_ALT, highlightbackground=BORDER, highlightthickness=1)
-        card.pack(fill="both", expand=True)
-
-        header = tk.Frame(card, bg=SURFACE_ALT, padx=16, pady=14)
-        header.pack(fill="x")
-        tk.Label(header, text="结果详情", bg=SURFACE_ALT, fg=TEXT, font=(ui_font_family(), 14, "bold")).pack(anchor="w")
-        tk.Label(header, text="显示简介、标签、热度和链接。", bg=SURFACE_ALT, fg=MUTED, font=(ui_font_family(), 10)).pack(anchor="w", pady=(4, 0))
-
-        body = tk.Frame(card, bg=SURFACE_ALT)
-        body.pack(fill="both", expand=True, padx=14, pady=(0, 14))
-
+        right_wrap = tk.Frame(split, bg=BG)
+        preview = tk.Frame(right_wrap, bg=SURFACE_ALT, highlightbackground=BORDER, highlightthickness=1)
+        preview.pack(fill="both", expand=True)
+        tk.Label(preview, text="预览", bg=SURFACE_ALT, fg=TEXT, font=(ui_font_family(), 12, "bold")).pack(anchor="w", padx=10, pady=(8, 4))
+        detail_body = tk.Frame(preview, bg=SURFACE_ALT)
+        detail_body.pack(fill="both", expand=True, padx=8, pady=(0, 8))
         self.detail_text = tk.Text(
-            body,
+            detail_body,
             wrap="word",
             bg=SURFACE_ALT,
             fg=TEXT,
             relief="flat",
-            font=(ui_font_family(), 11),
-            padx=6,
-            pady=6,
+            font=(ui_font_family(), 10),
+            padx=4,
+            pady=4,
             spacing1=2,
             spacing2=2,
-            spacing3=8,
+            spacing3=6,
         )
         self.detail_text.pack(side="left", fill="both", expand=True)
         self.detail_text.configure(state="disabled")
-        self.detail_text.tag_configure("title", font=(ui_font_family(), 16, "bold"), foreground=TEXT)
-        self.detail_text.tag_configure("label", font=(ui_font_family(), 10, "bold"), foreground=ACCENT_DARK)
+        self.detail_text.tag_configure("title", font=(ui_font_family(), 13, "bold"), foreground=TEXT)
+        self.detail_text.tag_configure("label", font=(ui_font_family(), 9, "bold"), foreground=ACCENT_DARK)
         self.detail_text.tag_configure("muted", foreground=MUTED)
+        dscroll = ttk.Scrollbar(detail_body, orient="vertical", style="App.Vertical.TScrollbar", command=self.detail_text.yview)
+        dscroll.pack(side="right", fill="y")
+        self.detail_text.configure(yscrollcommand=dscroll.set)
 
-        scroll = ttk.Scrollbar(body, orient="vertical", style="App.Vertical.TScrollbar", command=self.detail_text.yview)
-        scroll.pack(side="right", fill="y")
-        self.detail_text.configure(yscrollcommand=scroll.set)
+        split.add(left_wrap, weight=3)
+        split.add(right_wrap, weight=2)
         self._render_story_detail(None)
 
-    def _build_export_tab(self, parent: ttk.Frame) -> None:
-        warning_card = tk.Frame(parent, bg="#fff3e6", highlightbackground="#e4c49e", highlightthickness=1, padx=16, pady=14)
-        warning_card.pack(fill="x")
-        tk.Label(warning_card, text="授权导出", bg="#fff3e6", fg=TEXT, font=(ui_font_family(), 15, "bold")).pack(anchor="w")
-        tk.Label(
-            warning_card,
-            text="这里只接受你明确提供的作品 URL。导出前必须确认作品属于你，或你已经获得明确授权。免费作品可直接导出；若为你的 Wattpad 付费作品（本人作者），请在下方选择登录态 Cookie 文件（与浏览器导出格式一致），工具会校验登录账号与作品作者一致后再导出。导出时会询问压缩包保存位置，默认打开系统下载文件夹。",
-            bg="#fff3e6",
-            fg=MUTED,
-            justify="left",
-            wraplength=980,
-            font=(ui_font_family(), 10),
-        ).pack(anchor="w", pady=(6, 0))
+    def _render_story_detail(self, story: dict | None) -> None:
+        self.detail_text.configure(state="normal")
+        self.detail_text.delete("1.0", "end")
 
-        controls = ttk.LabelFrame(parent, text="导出参数", style="Surface.TLabelframe", padding=14)
-        controls.pack(fill="x", pady=(12, 0))
+        if not story:
+            self.detail_text.insert("end", "—", "muted")
+            self.detail_text.configure(state="disabled")
+            return
 
-        ttk.Label(controls, text="作品 URL", style="Body.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Entry(controls, textvariable=self.export_story_url, width=74).grid(row=0, column=1, columnspan=3, sticky="ew", padx=(8, 0))
+        self.detail_text.insert("end", story.get("title", "") + "\n", "title")
+        self.detail_text.insert("end", f"作者：{story.get('author', '')}\n\n", "muted")
 
-        ttk.Label(controls, text="保存方式", style="Body.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
-        ttk.Label(
-            controls,
-            text=f"点击开始导出后，将弹窗询问 ZIP 压缩包保存位置。\n默认打开：{default_downloads_dir()}",
-            style="Muted.TLabel",
-            justify="left",
-        ).grid(row=1, column=1, columnspan=3, sticky="w", padx=(8, 0), pady=(10, 0))
+        fields = [
+            ("阅读", format_number(story.get("readCount"))),
+            ("投票", format_number(story.get("voteCount"))),
+            ("评论", format_number(story.get("commentCount"))),
+            ("章节", format_number(story.get("numParts"))),
+            ("状态", status_text(story)),
+            ("类型", type_text(story)),
+            ("级别", maturity_text(story)),
+            ("更新", str(story.get("lastPublishedPart") or "—")),
+            ("链接", story.get("url") or ""),
+            ("标签", "、".join(story.get("tags", [])) or "—"),
+        ]
+        for label, value in fields:
+            self.detail_text.insert("end", label + "：", "label")
+            self.detail_text.insert("end", value + "\n")
 
-        ttk.Label(controls, text="文件前缀", style="Body.TLabel").grid(row=2, column=0, sticky="w", pady=(10, 0))
-        ttk.Entry(controls, textvariable=self.export_basename, width=28).grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(10, 0))
-        ttk.Checkbutton(controls, text="自动生成中文版文档", variable=self.export_translate).grid(row=2, column=2, sticky="w", pady=(10, 0))
+        self.detail_text.insert("end", "\n简介\n", "label")
+        self.detail_text.insert("end", story.get("description") or "—")
+        self.detail_text.configure(state="disabled")
 
-        ttk.Label(controls, text="Cookie 文件", style="Body.TLabel").grid(row=3, column=0, sticky="nw", pady=(10, 0))
-        cookie_row = tk.Frame(controls, bg=SURFACE)
-        cookie_row.grid(row=3, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(10, 0))
-        ttk.Entry(cookie_row, textvariable=self.export_cookies_path, width=62).pack(side="left", fill="x", expand=True)
-        ttk.Button(cookie_row, text="选择文件…", style="Soft.TButton", command=self._choose_export_cookies_file).pack(side="left", padx=(8, 0))
-        ttk.Label(
-            controls,
-            text="可选。作者导出本人付费作品时：在浏览器登录 Wattpad 后导出 cookies.txt（Netscape）或 JSON，再选择该文件。",
-            style="Muted.TLabel",
-            justify="left",
-            wraplength=720,
-        ).grid(row=4, column=1, columnspan=3, sticky="w", padx=(8, 0), pady=(4, 0))
-
-        ttk.Checkbutton(
-            controls,
-            text="我确认：该作品属于我，或我已经获得明确授权",
-            variable=self.export_authorized,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
-
-        self.export_button = ttk.Button(controls, text="开始导出", style="Accent.TButton", command=self._start_export)
-        self.export_button.grid(row=5, column=3, sticky="e", pady=(12, 0))
-
-        controls.columnconfigure(1, weight=1)
-        controls.columnconfigure(2, weight=1)
-
-        flow = tk.Frame(parent, bg=BG)
-        flow.pack(fill="both", expand=True, pady=(12, 0))
-
-        left = self._create_info_card(
-            flow,
-            "将生成的文件",
-            [
-                "英文 DOCX 文档",
-                "中文 DOCX 文档",
-                "最终自动打包为一个 ZIP 压缩包",
-                "压缩包内默认只保留最终 Word 文档",
-            ],
-        )
-        left.pack(side="left", fill="both", expand=True)
-
-        right = self._create_info_card(
-            flow,
-            "处理流程",
-            [
-                "1. 询问 ZIP 保存位置，默认下载文件夹",
-                "2. 读取故事目录和章节列表（付费书需 Cookie 且校验作者账号）",
-                "3. 抓取各章节正文并生成英文稿",
-                "4. 按段翻译为简体中文",
-                "5. 只保留最终 DOCX 并自动打包",
-            ],
-        )
-        right.pack(side="left", fill="both", expand=True, padx=(12, 0))
-
-    def _create_stat_card(self, parent: tk.Frame, title: str, variable: tk.StringVar) -> tk.Frame:
-        card = tk.Frame(parent, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=16, pady=14)
-        tk.Label(card, text=title, bg=SURFACE, fg=MUTED, font=(ui_font_family(), 10)).pack(anchor="w")
-        tk.Label(card, textvariable=variable, bg=SURFACE, fg=TEXT, font=(ui_font_family(), 20, "bold")).pack(anchor="w", pady=(6, 0))
-        return card
-
-    def _create_info_card(self, parent: tk.Frame, title: str, lines: list[str]) -> tk.Frame:
-        card = tk.Frame(parent, bg=SURFACE, highlightbackground=BORDER, highlightthickness=1, padx=16, pady=14)
-        tk.Label(card, text=title, bg=SURFACE, fg=TEXT, font=(ui_font_family(), 14, "bold")).pack(anchor="w")
-        for line in lines:
-            tk.Label(card, text=line, bg=SURFACE, fg=MUTED, justify="left", anchor="w", font=(ui_font_family(), 10)).pack(anchor="w", pady=(8, 0))
-        return card
+    def _on_result_select(self, _event=None) -> None:
+        if not self.current_search_payload:
+            return
+        selected = self.results_tree.selection()
+        if not selected:
+            self._render_story_detail(None)
+            return
+        stories = self.current_search_payload.get("stories", [])
+        first = min(int(i) for i in selected)
+        if 0 <= first < len(stories):
+            self._render_story_detail(stories[first])
 
     def _choose_directory(self, variable: tk.StringVar) -> None:
         chosen = filedialog.askdirectory(initialdir=variable.get() or str(default_output_root()))
@@ -666,7 +511,7 @@ class WattpadApp:
         initial = self.export_cookies_path.get().strip()
         initial_dir = str(Path(initial).expanduser().parent) if initial else str(Path.home())
         chosen = filedialog.askopenfilename(
-            title="选择 Wattpad Cookie 文件",
+            title="",
             initialdir=initial_dir,
             filetypes=[
                 ("Cookie / JSON", "*.txt *.json"),
@@ -678,7 +523,6 @@ class WattpadApp:
 
     def _open_last_output(self) -> None:
         if not self.last_output_target or not self.last_output_target.exists():
-            messagebox.showinfo("没有可打开的位置", "当前还没有可打开的输出位置。")
             return
         reveal_target(self.last_output_target)
 
@@ -708,11 +552,10 @@ class WattpadApp:
         self.worker_running = busy
         state = "disabled" if busy else "normal"
         self.search_button.configure(state=state)
-        self.export_button.configure(state=state)
+        self.export_selected_button.configure(state=state)
 
     def _run_in_worker(self, label: str, fn) -> None:
         if self.worker_running:
-            messagebox.showinfo("任务进行中", "当前已有任务在运行，请等待完成后再操作。")
             return
 
         self._set_busy(True)
@@ -735,10 +578,8 @@ class WattpadApp:
     def _populate_search_results(self, payload: dict) -> None:
         self.current_search_payload = payload
         stories = payload.get("stories", [])
-        self.current_selected_story = stories[0] if stories else None
-
-        self.search_total_var.set(format_number(payload.get("total", 0)))
-        self.search_returned_var.set(format_number(payload.get("returned", len(stories))))
+        total = int(payload.get("total") or 0)
+        self.status_var.set(f"{len(stories)}/{total}")
 
         self.results_tree.delete(*self.results_tree.get_children())
         for idx, story in enumerate(stories, start=1):
@@ -764,107 +605,192 @@ class WattpadApp:
         else:
             self._render_story_detail(None)
 
-    def _render_story_detail(self, story: dict | None) -> None:
-        self.detail_text.configure(state="normal")
-        self.detail_text.delete("1.0", "end")
-
-        if not story:
-            self.detail_text.insert("end", "还没有可展示的结果。\n", "title")
-            self.detail_text.insert("end", "\n搜索后这里会显示作品简介、标签、热度和链接。", "muted")
-            self.detail_text.configure(state="disabled")
-            return
-
-        self.detail_text.insert("end", story["title"] + "\n", "title")
-        self.detail_text.insert("end", f"作者：{story['author']}\n", "muted")
-        self.detail_text.insert("end", "\n")
-
-        fields = [
-            ("阅读量", format_number(story["readCount"])),
-            ("投票数", format_number(story["voteCount"])),
-            ("评论数", format_number(story["commentCount"])),
-            ("章节数", format_number(story["numParts"])),
-            ("状态", status_text(story)),
-            ("类型", type_text(story)),
-            ("内容级别", maturity_text(story)),
-            ("最后更新", story.get("lastPublishedPart") or "未知"),
-            ("链接", story.get("url") or ""),
-            ("标签", "、".join(story.get("tags", [])) or "无"),
-        ]
-
-        for label, value in fields:
-            self.detail_text.insert("end", label + "：", "label")
-            self.detail_text.insert("end", value + "\n")
-
-        self.detail_text.insert("end", "\n简介\n", "label")
-        self.detail_text.insert("end", story.get("description") or "暂无简介")
-        self.detail_text.configure(state="disabled")
-
-    def _on_result_select(self, _event=None) -> None:
+    def _select_all_search_results(self) -> None:
         if not self.current_search_payload:
             return
+        stories = self.current_search_payload.get("stories", [])
+        if not stories:
+            return
+        ids = tuple(str(i) for i in range(len(stories)))
+        self.results_tree.selection_set(ids)
+        self.results_tree.focus(ids[-1])
+        self._render_story_detail(stories[0])
+
+    def _get_selected_stories_ordered(self) -> list[dict]:
+        if not self.current_search_payload:
+            return []
         selected = self.results_tree.selection()
         if not selected:
-            return
-        index = int(selected[0])
+            return []
         stories = self.current_search_payload.get("stories", [])
-        if 0 <= index < len(stories):
-            self.current_selected_story = stories[index]
-            self._render_story_detail(self.current_selected_story)
-
-    def _open_selected_story(self) -> None:
-        if not self.current_selected_story:
-            messagebox.showinfo("未选择作品", "请先在搜索结果中选中一条作品。")
-            return
-        open_target(self.current_selected_story["url"])
+        indices = sorted(int(i) for i in selected)
+        return [stories[i] for i in indices if 0 <= i < len(stories)]
 
     def _copy_selected_story_url(self) -> None:
-        if not self.current_selected_story:
-            messagebox.showinfo("未选择作品", "请先在搜索结果中选中一条作品。")
+        chosen = self._get_selected_stories_ordered()
+        if not chosen:
             return
-        url = self.current_selected_story["url"]
+        urls = "\n".join(s.get("url", "") for s in chosen if s.get("url"))
         self.root.clipboard_clear()
-        self.root.clipboard_append(url)
-        self.status_var.set("已复制选中作品链接")
-
-    def _use_selected_story_url(self) -> None:
-        if not self.current_selected_story:
-            messagebox.showinfo("未选择作品", "请先在搜索结果中选中一条作品。")
-            return
-        self.export_story_url.set(self.current_selected_story["url"])
-        if not self.export_basename.get().strip():
-            self.export_basename.set(slugify(self.current_selected_story["title"]))
-        self.notebook.select(self.export_tab)
-        self.status_var.set("已把作品链接带入导出页")
-
-    def _suggest_export_basename(self, story_url: str) -> str:
-        raw = self.export_basename.get().strip()
-        if raw:
-            return slugify(raw) or "wattpad-export"
-
-        tail = story_url.rstrip("/").split("/")[-1]
-        tail = re.sub(r"^\d+-", "", tail)
-        suggested = slugify(tail) or "wattpad-export"
-        self.export_basename.set(suggested)
-        return suggested
+        self.root.clipboard_append(urls)
 
     def _ask_export_archive_path(self, suggested_basename: str) -> Path | None:
         initial_target = self.last_output_target or default_downloads_dir()
         initial_dir = initial_target if initial_target.is_dir() else initial_target.parent
         chosen = filedialog.asksaveasfilename(
-            title="选择导出压缩包保存位置",
+            title="",
             initialdir=str(initial_dir),
             initialfile=f"{suggested_basename}.zip",
             defaultextension=".zip",
-            filetypes=[("ZIP 压缩包", "*.zip")],
+            filetypes=[("ZIP", "*.zip")],
         )
         if not chosen:
             return None
         return normalize_zip_path(chosen)
 
+    def _show_batch_export_confirm_dialog(self, stories: list[dict]) -> tuple[bool, Path | None] | None:
+        """Returns (translate_to_chinese, cookies_path) or None if cancelled."""
+        any_paywalled = any(bool(s.get("isPaywalled")) for s in stories)
+        outcome: list[tuple[bool, Path | None] | None] = [None]
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("导出")
+        dlg.transient(self.root)
+        dlg.grab_set()
+        dlg.configure(bg=SURFACE)
+        dlg.minsize(380, 260)
+
+        shell = tk.Frame(dlg, bg=SURFACE, padx=12, pady=10)
+        shell.pack(fill="both", expand=True)
+
+        tk.Label(shell, text=str(len(stories)), bg=SURFACE, fg=TEXT, font=(ui_font_family(), 14, "bold")).pack(anchor="w")
+
+        list_wrap = tk.Frame(shell, bg=SURFACE)
+        list_wrap.pack(fill="both", expand=True, pady=(4, 8))
+        scroll = ttk.Scrollbar(list_wrap, style="App.Vertical.TScrollbar")
+        scroll.pack(side="right", fill="y")
+        lines = min(12, max(4, len(stories)))
+        body_txt = tk.Text(
+            list_wrap,
+            height=lines,
+            width=56,
+            wrap="word",
+            font=(ui_font_family(), 10),
+            bg="#fffefb",
+            fg=TEXT,
+            relief="flat",
+            yscrollcommand=scroll.set,
+        )
+        body_txt.pack(side="left", fill="both", expand=True)
+        scroll.config(command=body_txt.yview)
+        for i, s in enumerate(stories, start=1):
+            body_txt.insert("end", f"{i}. {s.get('title', '')}\n")
+        body_txt.configure(state="disabled")
+
+        translate_var = tk.BooleanVar(value=self.export_translate.get())
+        ttk.Checkbutton(shell, text="中文", variable=translate_var).pack(anchor="w", pady=(0, 4))
+
+        if any_paywalled:
+            row = tk.Frame(shell, bg=SURFACE)
+            row.pack(fill="x", pady=(0, 6))
+            ttk.Entry(row, textvariable=self.export_cookies_path).pack(side="left", fill="x", expand=True, padx=(0, 6))
+            ttk.Button(row, text="…", style="Soft.TButton", width=3, command=self._choose_export_cookies_file).pack(side="right")
+
+        btn_row = tk.Frame(shell, bg=SURFACE)
+        btn_row.pack(fill="x", pady=(8, 0))
+
+        def finish(cancelled: bool) -> None:
+            if cancelled:
+                outcome[0] = None
+                dlg.destroy()
+                return
+            raw = self.export_cookies_path.get().strip()
+            cpath = Path(raw).expanduser().resolve() if raw else None
+            if any_paywalled and (not cpath or not cpath.is_file()):
+                messagebox.showerror("Cookie", "Cookie", parent=dlg)
+                return
+            self.export_translate.set(bool(translate_var.get()))
+            outcome[0] = (bool(translate_var.get()), cpath)
+            dlg.destroy()
+
+        ttk.Button(btn_row, text="取消", style="Soft.TButton", command=lambda: finish(True)).pack(side="right", padx=(6, 0))
+        ttk.Button(btn_row, text="确定", style="Accent.TButton", command=lambda: finish(False)).pack(side="right")
+
+        dlg.protocol("WM_DELETE_WINDOW", lambda: finish(True))
+
+        dlg.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dlg.winfo_reqwidth()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_reqheight()) // 2
+        dlg.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+        self.root.wait_window(dlg)
+        return outcome[0]
+
+    def _start_batch_export_from_search(self) -> None:
+        stories = self._get_selected_stories_ordered()
+        if not stories:
+            return
+
+        settings = self._show_batch_export_confirm_dialog(stories)
+        if settings is None:
+            return
+
+        translate, cookies_path = settings
+        keyword = self.search_keyword.get().strip()
+        suggest = f"{slugify(keyword) or 'batch'}-{len(stories)}部"
+        archive_path = self._ask_export_archive_path(suggest)
+        if archive_path is None:
+            return
+
+        def worker() -> None:
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix="wattpad-batch-") as temp_root:
+                staging = Path(temp_root) / archive_path.stem.strip()
+                staging.mkdir(parents=True, exist_ok=True)
+                staging = staging.resolve()
+                session = build_session()
+                all_docx: list[Path] = []
+                try:
+                    for idx, story in enumerate(stories, start=1):
+                        print(f"[批量 {idx}/{len(stories)}] {story.get('title', '')}")
+                        url = story.get("url") or ""
+                        if not url:
+                            raise RuntimeError(f"缺少作品链接：{story.get('title', '')!r}")
+                        sid = story.get("id") or idx
+                        folder_name = f"{slugify(story.get('title', '') or 'story')}-{sid}".strip()
+                        per_dir = (staging / folder_name).resolve()
+                        per_dir.mkdir(parents=True, exist_ok=True)
+                        result = export_authorized_story(
+                            session=session,
+                            story_url=url,
+                            output_dir=per_dir,
+                            basename=None,
+                            translate_to_chinese=translate,
+                            cookies_path=cookies_path,
+                        )
+                        all_docx.append(Path(result["english_docx"]).resolve())
+                        if "chinese_docx" in result:
+                            all_docx.append(Path(result["chinese_docx"]).resolve())
+                finally:
+                    session.close()
+
+                zip_root = staging.resolve()
+                if archive_path.exists():
+                    archive_path.unlink()
+                with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+                    for docx in all_docx:
+                        arcname = docx.resolve().relative_to(zip_root).as_posix()
+                        archive.write(docx, arcname)
+
+            print(f"ZIP: {archive_path}")
+            self.events.put(("output-target", archive_path))
+            self.events.put(("status", archive_path.name))
+
+        self._run_in_worker("", worker)
+
     def _start_search(self) -> None:
         keyword = self.search_keyword.get().strip()
         if not keyword:
-            messagebox.showerror("缺少关键词", "请先输入要搜索的关键词。")
             return
 
         output_dir = Path(self.search_output_dir.get().strip() or default_output_root() / "search").expanduser().resolve()
@@ -910,64 +836,8 @@ class WattpadApp:
             self.events.put(("search-payload", payload))
             if saved_paths:
                 self.events.put(("output-target", output_dir))
-                self.events.put(("status", f"搜索完成，已保存 {len(saved_paths)} 个结果文件"))
-            else:
-                self.events.put(("status", "搜索完成，未额外保存结果文件"))
 
-        self._run_in_worker("正在搜索作品...", worker)
-
-    def _start_export(self) -> None:
-        story_url = self.export_story_url.get().strip()
-        if not story_url:
-            messagebox.showerror("缺少作品链接", "请先输入 Wattpad 作品链接。")
-            return
-        if not self.export_authorized.get():
-            messagebox.showerror("缺少授权确认", "请先确认：该作品属于你，或你已经获得明确授权。")
-            return
-
-        basename = self._suggest_export_basename(story_url)
-        archive_path = self._ask_export_archive_path(basename)
-        if archive_path is None:
-            self.status_var.set("已取消导出")
-            return
-
-        translate = self.export_translate.get()
-
-        def worker() -> None:
-            archive_path.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(prefix="wattpad-export-") as temp_root:
-                staging_root = Path(temp_root) / archive_path.stem
-                staging_root.mkdir(parents=True, exist_ok=True)
-
-                session = build_session()
-                try:
-                    cookies_raw = self.export_cookies_path.get().strip()
-                    cookies_path = Path(cookies_raw).expanduser().resolve() if cookies_raw else None
-                    result = export_authorized_story(
-                        session=session,
-                        story_url=story_url,
-                        output_dir=staging_root,
-                        basename=basename,
-                        translate_to_chinese=translate,
-                        cookies_path=cookies_path,
-                    )
-                finally:
-                    session.close()
-
-                export_files = [Path(result["english_docx"])]
-                if "chinese_docx" in result:
-                    export_files.append(Path(result["chinese_docx"]))
-                bundle_export_files(export_files, archive_path)
-
-            print(f"English DOCX: {result['english_docx']}")
-            if "chinese_docx" in result:
-                print(f"Chinese DOCX: {result['chinese_docx']}")
-            print(f"ZIP: {archive_path}")
-
-            self.events.put(("output-target", archive_path))
-            self.events.put(("status", f"导出完成，已打包 {len(export_files)} 个 Word 文档"))
-
-        self._run_in_worker("正在导出作品...", worker)
+        self._run_in_worker("", worker)
 
     def _poll_events(self) -> None:
         try:
@@ -986,9 +856,9 @@ class WattpadApp:
                     self._set_busy(False)
                 elif kind == "error":
                     self._set_busy(False)
-                    self.status_var.set("任务失败")
+                    self.status_var.set("")
                     self._append_log(payload)
-                    messagebox.showerror("任务失败", payload)
+                    messagebox.showerror("Err", payload[:800])
         except queue.Empty:
             pass
         finally:
@@ -1001,7 +871,7 @@ def main() -> int:
     args, _ = parser.parse_known_args()
 
     if args.self_test:
-        print("Wattpad 中文工具箱 GUI 自检通过")
+        print("OK")
         print(f"Python: {sys.version.split()[0]}")
         print(f"Platform: {sys.platform}")
         return 0

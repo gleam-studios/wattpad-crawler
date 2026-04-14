@@ -11,7 +11,7 @@ import PyInstaller.__main__
 
 
 APP_NAME = "WattpadTool"
-MAC_LAUNCHER_NAME = "Wattpad 中文工具箱"
+MAC_LAUNCHER_NAME = "Wattpad"
 
 
 def build(debug_console: bool = False) -> Path:
