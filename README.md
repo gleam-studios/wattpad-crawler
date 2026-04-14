@@ -1,8 +1,8 @@
 # Wattpad 中文工具箱
 
-[![Build and Release](https://github.com/gleam-studios/wattpad-/actions/workflows/build-release.yml/badge.svg)](https://github.com/gleam-studios/wattpad-/actions/workflows/build-release.yml)
-[![Latest Release](https://img.shields.io/github/v/release/gleam-studios/wattpad-)](https://github.com/gleam-studios/wattpad-/releases/latest)
-[![License](https://img.shields.io/badge/license-Private-lightgrey)](https://github.com/gleam-studios/wattpad-)
+[![Build and Release](https://github.com/gleam-studios/wattpad-crawler/actions/workflows/build-release.yml/badge.svg)](https://github.com/gleam-studios/wattpad-crawler/actions/workflows/build-release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/gleam-studios/wattpad-crawler)](https://github.com/gleam-studios/wattpad-crawler/releases/latest)
+[![License](https://img.shields.io/badge/license-Private-lightgrey)](https://github.com/gleam-studios/wattpad-crawler)
 
 面向中文用户的 Wattpad 桌面工具，提供两类能力：
 
@@ -18,7 +18,7 @@
 
 ## 下载
 
-- 最新版本：<https://github.com/gleam-studios/wattpad-/releases/latest>
+- 最新版本：<https://github.com/gleam-studios/wattpad-crawler/releases/latest>
 - 当前推荐下载：
   - macOS：`WattpadTool-mac.zip`
   - Windows：`WattpadTool-windows.zip`
