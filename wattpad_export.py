@@ -6,7 +6,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -118,6 +118,24 @@ def fetch_story(session: requests.Session, story_url: str) -> Dict:
     data = extract_json_blob(response.text, "window.__remixContext = ")
     loader = data["state"]["loaderData"]["routes/story.$storyid"]
     return loader["story"]
+
+
+def fetch_root_loader_data(session: requests.Session) -> Dict:
+    response = session.get("https://www.wattpad.com/", timeout=30)
+    response.raise_for_status()
+    data = extract_json_blob(response.text, "window.__remixContext = ")
+    root = data.get("state", {}).get("loaderData", {}).get("root")
+    if not isinstance(root, dict):
+        raise RuntimeError("Unexpected Wattpad homepage response: missing root loader data.")
+    return root
+
+
+def fetch_logged_in_user(session: requests.Session) -> Optional[Dict]:
+    root = fetch_root_loader_data(session)
+    user = root.get("currentUser")
+    if isinstance(user, dict):
+        return user
+    return None
 
 
 def fetch_part_html(session: requests.Session, part: Dict) -> Tuple[str, int]:

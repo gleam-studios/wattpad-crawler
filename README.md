@@ -61,8 +61,9 @@
 
 - 搜索只抓取公开元数据
 - 不支持从关键词搜索结果中直接整本抓取任意作品
-- 导出只适用于你拥有版权或已获得明确授权的免费作品
-- 对付费作品会直接拒绝导出
+- 导出只适用于你拥有版权或已获得明确授权的作品
+- 对**他人**的付费作品不会提供导出能力
+- **作者本人**的 Wattpad 付费作品：在浏览器登录作者账号并导出 Cookie 文件后，可使用 `--cookies`（CLI）或 GUI 中的「Cookie 文件」选项导出；工具会校验登录用户名与作品作者用户名一致
 
 ## 运行要求
 
@@ -120,6 +121,15 @@ python3 wattpad_tool.py export "https://www.wattpad.com/story/242618522-ice-cold
   --basename ice-cold
 ```
 
+作者导出**本人**的付费作品时，需加上从已登录浏览器导出的 Cookie 文件（Netscape `cookies.txt` 或常见扩展导出的 JSON 列表）：
+
+```bash
+python3 wattpad_tool.py export "https://www.wattpad.com/story/你的作品链接" \
+  --authorized \
+  --cookies ./wattpad_cookies.txt \
+  --output-dir ./wattpad_tool_output/my_paid_story
+```
+
 只导出英文版：
 
 ```bash
@@ -144,6 +154,7 @@ GUI 导出则会自动打包，并默认只保留最终英文/中文 Word 文档
 .
 ├── wattpad_app.py              # 全中文桌面 GUI
 ├── wattpad_tool.py             # 统一 CLI 入口
+├── wattpad_cookies.py          # 从浏览器导出文件加载 Cookie（作者导出付费书）
 ├── wattpad_export.py           # 英文导出逻辑
 ├── translate_wattpad_html.py   # 中文翻译逻辑
 ├── docx_renderer.py            # 跨平台 DOCX 渲染

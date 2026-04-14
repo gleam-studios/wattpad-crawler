@@ -263,6 +263,7 @@ class WattpadApp:
         self.export_authorized = tk.BooleanVar(value=False)
         self.export_translate = tk.BooleanVar(value=True)
         self.export_basename = tk.StringVar()
+        self.export_cookies_path = tk.StringVar()
 
         self._build_ui()
         self.root.after(120, self._poll_events)
@@ -341,7 +342,7 @@ class WattpadApp:
         ttk.Label(left, text="Wattpad 中文工具箱", style="HeroTitle.TLabel").pack(anchor="w")
         ttk.Label(
             left,
-            text="搜索公开作品元数据，按热度排序；对你自己的作品或已获授权作品，导出英文版和中文版文档。",
+            text="搜索公开作品元数据，按热度排序；对你自己的作品或已获授权作品，导出英文版和中文版文档。作者本人的付费作品在提供浏览器 Cookie 后也可导出。",
             style="HeroSub.TLabel",
         ).pack(anchor="w", pady=(6, 0))
 
@@ -564,7 +565,7 @@ class WattpadApp:
         tk.Label(warning_card, text="授权导出", bg="#fff3e6", fg=TEXT, font=(ui_font_family(), 15, "bold")).pack(anchor="w")
         tk.Label(
             warning_card,
-            text="这里只接受你明确提供的作品 URL。导出前必须确认作品属于你，或你已经获得明确授权；付费作品会直接拒绝导出。导出时会询问压缩包保存位置，默认打开系统下载文件夹。",
+            text="这里只接受你明确提供的作品 URL。导出前必须确认作品属于你，或你已经获得明确授权。免费作品可直接导出；若为你的 Wattpad 付费作品（本人作者），请在下方选择登录态 Cookie 文件（与浏览器导出格式一致），工具会校验登录账号与作品作者一致后再导出。导出时会询问压缩包保存位置，默认打开系统下载文件夹。",
             bg="#fff3e6",
             fg=MUTED,
             justify="left",
@@ -590,14 +591,27 @@ class WattpadApp:
         ttk.Entry(controls, textvariable=self.export_basename, width=28).grid(row=2, column=1, sticky="w", padx=(8, 0), pady=(10, 0))
         ttk.Checkbutton(controls, text="自动生成中文版文档", variable=self.export_translate).grid(row=2, column=2, sticky="w", pady=(10, 0))
 
+        ttk.Label(controls, text="Cookie 文件", style="Body.TLabel").grid(row=3, column=0, sticky="nw", pady=(10, 0))
+        cookie_row = tk.Frame(controls, bg=SURFACE)
+        cookie_row.grid(row=3, column=1, columnspan=3, sticky="ew", padx=(8, 0), pady=(10, 0))
+        ttk.Entry(cookie_row, textvariable=self.export_cookies_path, width=62).pack(side="left", fill="x", expand=True)
+        ttk.Button(cookie_row, text="选择文件…", style="Soft.TButton", command=self._choose_export_cookies_file).pack(side="left", padx=(8, 0))
+        ttk.Label(
+            controls,
+            text="可选。作者导出本人付费作品时：在浏览器登录 Wattpad 后导出 cookies.txt（Netscape）或 JSON，再选择该文件。",
+            style="Muted.TLabel",
+            justify="left",
+            wraplength=720,
+        ).grid(row=4, column=1, columnspan=3, sticky="w", padx=(8, 0), pady=(4, 0))
+
         ttk.Checkbutton(
             controls,
             text="我确认：该作品属于我，或我已经获得明确授权",
             variable=self.export_authorized,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
         self.export_button = ttk.Button(controls, text="开始导出", style="Accent.TButton", command=self._start_export)
-        self.export_button.grid(row=3, column=3, sticky="e", pady=(12, 0))
+        self.export_button.grid(row=5, column=3, sticky="e", pady=(12, 0))
 
         controls.columnconfigure(1, weight=1)
         controls.columnconfigure(2, weight=1)
@@ -622,7 +636,7 @@ class WattpadApp:
             "处理流程",
             [
                 "1. 询问 ZIP 保存位置，默认下载文件夹",
-                "2. 读取故事目录和章节列表",
+                "2. 读取故事目录和章节列表（付费书需 Cookie 且校验作者账号）",
                 "3. 抓取各章节正文并生成英文稿",
                 "4. 按段翻译为简体中文",
                 "5. 只保留最终 DOCX 并自动打包",
@@ -647,6 +661,20 @@ class WattpadApp:
         chosen = filedialog.askdirectory(initialdir=variable.get() or str(default_output_root()))
         if chosen:
             variable.set(chosen)
+
+    def _choose_export_cookies_file(self) -> None:
+        initial = self.export_cookies_path.get().strip()
+        initial_dir = str(Path(initial).expanduser().parent) if initial else str(Path.home())
+        chosen = filedialog.askopenfilename(
+            title="选择 Wattpad Cookie 文件",
+            initialdir=initial_dir,
+            filetypes=[
+                ("Cookie / JSON", "*.txt *.json"),
+                ("所有文件", "*.*"),
+            ],
+        )
+        if chosen:
+            self.export_cookies_path.set(chosen)
 
     def _open_last_output(self) -> None:
         if not self.last_output_target or not self.last_output_target.exists():
@@ -913,12 +941,15 @@ class WattpadApp:
 
                 session = build_session()
                 try:
+                    cookies_raw = self.export_cookies_path.get().strip()
+                    cookies_path = Path(cookies_raw).expanduser().resolve() if cookies_raw else None
                     result = export_authorized_story(
                         session=session,
                         story_url=story_url,
                         output_dir=staging_root,
                         basename=basename,
                         translate_to_chinese=translate,
+                        cookies_path=cookies_path,
                     )
                 finally:
                     session.close()

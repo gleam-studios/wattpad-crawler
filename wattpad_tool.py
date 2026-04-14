@@ -5,12 +5,13 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import requests
 
 from translate_wattpad_html import translate_html_document
-from wattpad_export import USER_AGENT, export_story_assets, fetch_story, slugify
+from wattpad_cookies import load_wattpad_cookies
+from wattpad_export import USER_AGENT, export_story_assets, fetch_logged_in_user, fetch_story, slugify
 
 
 SEARCH_ENDPOINT = "https://www.wattpad.com/v4/search/stories"
@@ -202,12 +203,37 @@ def export_authorized_story(
     output_dir: Path,
     basename: str | None,
     translate_to_chinese: bool,
+    cookies_path: Optional[Path] = None,
 ) -> Dict[str, Path]:
+    if cookies_path is not None:
+        load_wattpad_cookies(session, cookies_path)
+
     story = fetch_story(session, story_url)
     if story.get("isPaywalled"):
-        raise RuntimeError(
-            "Refusing export for paywalled stories. This tool is limited to free stories you own or have explicit permission to archive."
-        )
+        if cookies_path is None:
+            raise RuntimeError(
+                "Paywalled stories require a browser cookie file from an account that owns this story. "
+                "Export cookies while logged into Wattpad in your browser, then pass --cookies /path/to/cookies.txt"
+            )
+        viewer = fetch_logged_in_user(session)
+        if not viewer:
+            raise RuntimeError(
+                "Could not detect a logged-in Wattpad user from the cookie file. "
+                "Log in on wattpad.com in your browser, export fresh cookies, and try again."
+            )
+        author = story.get("user") or {}
+        author_username = (author.get("username") or "").strip()
+        my_username = (viewer.get("username") or "").strip()
+        if not author_username or not my_username:
+            raise RuntimeError(
+                "Could not compare author identity (missing username in story metadata or session user). "
+                "Ensure your cookie export is from a logged-in account."
+            )
+        if author_username.lower() != my_username.lower():
+            raise RuntimeError(
+                f"Paywalled export is only allowed when the logged-in account matches the story author "
+                f"(story author: {author_username!r}, session user: {my_username!r})."
+            )
 
     base = safe_story_basename(story, basename)
     english_base = f"{base}-en"
@@ -305,6 +331,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only generate the English HTML/DOCX pair.",
     )
+    export_parser.add_argument(
+        "--cookies",
+        type=Path,
+        help=(
+            "Path to Netscape cookies.txt or JSON cookie export while logged into Wattpad. "
+            "Required for paywalled stories; cookies must be from the account that owns the story."
+        ),
+    )
 
     return parser
 
@@ -351,6 +385,7 @@ def run_export(args: argparse.Namespace) -> int:
             output_dir=output_dir,
             basename=args.basename,
             translate_to_chinese=not args.skip_translation,
+            cookies_path=args.cookies.expanduser().resolve() if args.cookies else None,
         )
     finally:
         session.close()
